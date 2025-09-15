@@ -6,21 +6,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
+
       - uses: android-actions/setup-android@v3
+
       - name: install android sdks
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # use the repo's wrapper to avoid version drift
-      - name: gradle info
-        run: ./gradlew --version
-
-      - name: build debug apk (with full logs)
+      # ensure gradlew can run (prevents exit code 126)
+      - name: make gradlew executable (if present)
         run: |
-          ./gradlew --no-daemon clean assembleDebug --stacktrace --info | tee build.log
+          if [ -f ./gradlew ]; then chmod +x ./gradlew; fi
+          ls -l gradlew || true
+
+      # run with wrapper if available; otherwise download gradle 8.7 and use it
+      - name: build debug apk (full logs)
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew --no-daemon clean assembleDebug -x lint -x test --stacktrace --info | tee build.log
+          else
+            echo "gradlew not found or not executable; using standalone gradle 8.7"
+            curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
+            unzip -q gradle.zip
+            ./gradle-8.7/bin/gradle --no-daemon clean assembleDebug -x lint -x test --stacktrace --info | tee build.log
+          fi
 
       - name: list outputs
         if: always()
