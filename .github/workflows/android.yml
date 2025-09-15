@@ -13,19 +13,21 @@ jobs:
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-      - name: get gradle 8.7
+
+      # use the repo's wrapper to avoid version drift
+      - name: gradle info
+        run: ./gradlew --version
+
+      - name: build debug apk (with full logs)
         run: |
-          curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
-          unzip -q gradle.zip
-          ./gradle-8.7/bin/gradle -v
-      - name: build debug apk (logs)
-        run: |
-          ./gradle-8.7/bin/gradle --no-daemon clean assembleDebug --stacktrace --info | tee build.log
+          ./gradlew --no-daemon clean assembleDebug --stacktrace --info | tee build.log
+
       - name: list outputs
         if: always()
         run: |
           ls -R app/build/outputs || true
           find . -name "*.apk" -type f -print || true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
