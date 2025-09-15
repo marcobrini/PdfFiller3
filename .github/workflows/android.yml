@@ -18,7 +18,6 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # always use a known Gradle version (no wrapper weirdness)
       - name: get gradle 8.7
         run: |
           curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
@@ -29,13 +28,20 @@ jobs:
         run: |
           ./gradle-8.7/bin/gradle --no-daemon clean :app:assembleDebug --stacktrace --info | tee build.log
 
-      # find the apk; hard-fail if missing; print path + size
-      - name: verify apk exists
+      - name: list outputs (tree + any apks)
+        if: always()
+        run: |
+          echo "== outputs tree =="
+          ls -R app/build/outputs || true
+          echo "== any *.apk files =="
+          find "$PWD" -type f -name "*.apk" -print || true
+
+      - name: verify apk exists (robust)
         run: |
           set -e
-          APK_PATH=$(find app/build/outputs/apk -type f -name "app-debug.apk" -o -name "*-debug*.apk" | head -n 1 || true)
+          APK_PATH="$(find "$PWD" -type f -name "*.apk" | grep '/build/outputs/apk/' | head -n 1 || true)"
           if [ -z "$APK_PATH" ]; then
-            echo "no APK produced under app/build/outputs/apk"; exit 2
+            echo "no APK produced under **/build/outputs/apk/**"; exit 2
           fi
           echo "APK=$APK_PATH" | tee apk_path.txt
           ls -lh "$APK_PATH"
@@ -47,9 +53,9 @@ jobs:
         with:
           name: app-debug
           path: release/*.apk
-          if-no-files-found: error  # do not allow empty artifacts
+          if-no-files-found: error
 
-      - name: upload build log
+      - name: upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
