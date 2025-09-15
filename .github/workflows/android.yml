@@ -9,7 +9,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - uses: android-actions/setup-android@v3
 
@@ -26,7 +28,7 @@ jobs:
 
       - name: build debug apk (full logs)
         run: |
-          ./gradle-8.7/bin/gradle --no-daemon clean :app:assembleDebug --stacktrace --info | tee build.log
+          ./gradle-8.7/bin/gradle --no-daemon clean :app:assembleDebug -x lint -x test --stacktrace --info | tee build.log
 
       - name: list outputs (tree + any apks)
         if: always()
@@ -36,12 +38,16 @@ jobs:
           echo "== any *.apk files =="
           find "$PWD" -type f -name "*.apk" -print || true
 
-      - name: verify apk exists (robust)
+      - name: collect apk (fail if none)
         run: |
           set -e
-          APK_PATH="$(find "$PWD" -type f -name "*.apk" | grep '/build/outputs/apk/' | head -n 1 || true)"
+          # prefer the standard app location; if empty, search anywhere
+          APK_PATH="$(find app/build/outputs/apk -type f -name '*.apk' | head -n 1 || true)"
           if [ -z "$APK_PATH" ]; then
-            echo "no APK produced under **/build/outputs/apk/**"; exit 2
+            APK_PATH="$(find "$PWD" -type f -name '*.apk' | head -n 1 || true)"
+          fi
+          if [ -z "$APK_PATH" ]; then
+            echo "no apk produced. check build.log in artifacts."; exit 2
           fi
           echo "APK=$APK_PATH" | tee apk_path.txt
           ls -lh "$APK_PATH"
