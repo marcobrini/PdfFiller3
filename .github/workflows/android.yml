@@ -4,6 +4,7 @@ on: { workflow_dispatch: {}, push: {} }
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -17,35 +18,44 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      # ensure gradlew can run (prevents exit code 126)
-      - name: make gradlew executable (if present)
+      # always use a known Gradle version (no wrapper weirdness)
+      - name: get gradle 8.7
         run: |
-          if [ -f ./gradlew ]; then chmod +x ./gradlew; fi
-          ls -l gradlew || true
+          curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          unzip -q gradle.zip
+          ./gradle-8.7/bin/gradle -v
 
-      # run with wrapper if available; otherwise download gradle 8.7 and use it
       - name: build debug apk (full logs)
         run: |
-          if [ -x ./gradlew ]; then
-            ./gradlew --no-daemon clean assembleDebug -x lint -x test --stacktrace --info | tee build.log
-          else
-            echo "gradlew not found or not executable; using standalone gradle 8.7"
-            curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
-            unzip -q gradle.zip
-            ./gradle-8.7/bin/gradle --no-daemon clean assembleDebug -x lint -x test --stacktrace --info | tee build.log
-          fi
+          ./gradle-8.7/bin/gradle --no-daemon clean :app:assembleDebug --stacktrace --info | tee build.log
 
-      - name: list outputs
-        if: always()
+      # find the apk; hard-fail if missing; print path + size
+      - name: verify apk exists
         run: |
-          ls -R app/build/outputs || true
-          find . -name "*.apk" -type f -print || true
+          set -e
+          APK_PATH=$(find app/build/outputs/apk -type f -name "app-debug.apk" -o -name "*-debug*.apk" | head -n 1 || true)
+          if [ -z "$APK_PATH" ]; then
+            echo "no APK produced under app/build/outputs/apk"; exit 2
+          fi
+          echo "APK=$APK_PATH" | tee apk_path.txt
+          ls -lh "$APK_PATH"
+          sha256sum "$APK_PATH" | tee apk_sha256.txt
+          mkdir -p release && cp "$APK_PATH" release/
 
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: upload apk
+        uses: actions/upload-artifact@v4
         with:
           name: app-debug
+          path: release/*.apk
+          if-no-files-found: error  # do not allow empty artifacts
+
+      - name: upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
           path: |
-            app/build/outputs/apk/debug/*.apk
-            **/build/outputs/apk/**/*.apk
             build.log
+            apk_path.txt
+            apk_sha256.txt
+          if-no-files-found: warn
